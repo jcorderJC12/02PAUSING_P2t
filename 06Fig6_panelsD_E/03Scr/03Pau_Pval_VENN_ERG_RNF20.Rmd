@@ -1,0 +1,498 @@
+---
+title: "03Pau_Pval_VENN_ERG_RNF20"
+author:
+- name:  Dr. Julio Domingo Cordero Henriquez
+  affiliation: 
+  - Department of Cardiovascular Genomics and Epigenomics, European Center for Angioscience (ECAS), Medical Faculty Mannheim, Heidelberg University, Mannheim, Germany
+output:
+  BiocStyle::html_document:
+    toc: true
+vignette: >
+  % \VignetteIndexEntry{01Script: }
+  % \VignetteEngine{knitr::rmarkdown}
+---
+```{r style, echo = FALSE, results = 'asis'}
+BiocStyle::markdown()
+```
+
+
+Mailto: julio.cordero@medma.uni-heidelberg.de<br />
+
+# **Objective**
+-To generate a Boxplots from Pause Index of output files from GitHub repository code **(https://github.com/MiMiroot/PIC)**.<br /><br />
+
+
+
+# Summary of figures produced by this script.
+```{r,fig.dim = c(13, 8), results="asis", align='center',out.width="150%", echo=F}
+library(knitr)
+#knitr::include_graphics("./BROAD_SUMMA_H3K4me3.png")
+```   
+
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=F}
+library(future)
+plan("sequential", workers = 16)
+```
+
+
+```{r,message=FALSE,echo=FALSE,warning=FALSE}
+library(openxlsx)
+library(data.table)
+library(edgeR)
+library(dplyr)
+library(doParallel)
+library(BiocParallel)
+library(gam)
+library(foreach)
+library(ggplot2)
+library("RcppArmadillo")
+library(DESeq2)
+library(RColorBrewer)
+library(Rcpp)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(plyr)
+library(gplots)
+library(EnrichedHeatmap)
+library(ComplexHeatmap)
+library(tidyr)
+library(circlize)
+library(stringr)
+library("purrr")
+library("dplyr")                                    # Load dplyr package
+library("plyr")                                     # Load plyr package
+library("readr")  
+library(edgeR)
+library(ggplot2)
+library(rstatix)
+library(ggpubr)
+```
+
+
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=F}
+workdir = "./"
+setwd(workdir)
+
+PROJECT="03Pau_Pval_VENN_ERG_RNF20"
+PTHA11="../03OUTPUT/"
+dir.create(PTHA11)
+PTHA=paste(PTHA11,PROJECT,"/",sep="")
+PORT=paste(PTHA11,PROJECT,"/",sep="")
+dir.create(PTHA)
+dir.create(PORT)
+PEAK1="01Ctr"
+PEAK2="02R20"
+
+meta2 = "../01DATA/01Norma_countPI_ERG/"
+mat_m1b = data.frame(list.files(path=paste(meta2,sep=""), pattern="*tag_count_normalize.txt", full.names=F))
+mat_m22 = data.frame(gsub("*tag_count_normalize.txt", "", mat_m1b[,1]))
+
+G4<- data.frame(str_split_fixed(mat_m22[,1],"_", 6))
+
+mat_m22$Sample<- mat_m22[,1]
+name2<- as.character(t(mat_m22[,2]))
+NAME_PI<- c("gene_id","chrtss","starttss","endtss","chr_gb","start_gb","end_gb","strand", "ChIP_tss","Input_tss","ChIP_gb","	Input_gb")
+NAME_PI2<- c("gene_id","SYMBOL","strand", "ChIP_tss","Input_tss","ChIP_gb","Input_gb", "Clu", "Sample")
+#WORK1 = "../01DATA/gene_infohg38_v108.txt"
+
+# mat_v108 = read.delim(WORK1,header=F,sep="\t",dec=".")
+#mat_v108<- subset(mat_v108,select=c("V4","V8"))
+#colnames(mat_v108)<- c("gene_id","SYMBOL")
+
+#c2 = "../01DATA/gencode.v45.basic_more1kb.txt"
+
+#cat("Current file name is:",c2,"\n")
+#V45 = read.delim(c2,header=T,sep="\t",dec=".")
+
+WORK1 = "../../03Fig3_P2t_RNF20/01DATA/gene_infohg38_v108.txt"
+
+ mat_v108 = read.delim(WORK1,header=F,sep="\t",dec=".")
+mat_v108<- subset(mat_v108,select=c("V4","V8"))
+colnames(mat_v108)<- c("gene_id","SYMBOL")
+
+
+  c2 = "../../03Fig3_P2t_RNF20/01DATA/length_1kbmorev45.basic.bed"
+cat("Current file name is:",c2,"\n")
+V45 = read.delim(c2,header=F,sep="\t",dec=".")
+colnames(V45)[7]<- "len"
+V45$gene_id<- sub("\\..*","", V45$V4)
+V45<- subset(V45,select=c("gene_id","len"))
+mat_v108_V45<- merge(mat_v108,V45,by="gene_id")
+```
+
+#### this is a MARVELOUS WAY to integrate a lot of Quant files from RNA-seq  ######
+## THANK JESUS ####
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=T}
+
+mat_m1b = data.frame(list.files(path=paste(meta2,sep=""), pattern="*tag_count_normalize.txt", full.names=T))
+DE_LIST<- list()
+DE_LIST2<- list()
+ for(i in 1:length(mat_m22$Sample)){
+ MO<- mat_m22[i,1]
+ print(MO)
+ 
+ mat_1 = read.delim(mat_m1b[i,1],header=T,sep="\t",dec=".")
+colnames(mat_1)<- NAME_PI
+mat_1$Clu<- G4[i,4]
+mat_1$Sample<- mat_m22[i,2]
+
+mat_2<- merge(mat_v108,mat_1,by="gene_id")
+mat_3<- merge(V45,mat_2,by="gene_id")
+
+# DE_LIST[[i]]<- subset(mat_3,select=c(NAME_PI2))
+  DE_LIST[[i]]<- mat_3
+
+}
+
+GN5aPI<- do.call(rbind, DE_LIST)
+
+summary( GN5aPI$ChIP_tss)
+GN5aPI$IP_inp<- GN5aPI$ChIP_tss-GN5aPI$Input_tss
+GN5aPI$GB_inp<- GN5aPI$ChIP_gb-GN5aPI$`	Input_gb`
+ GN5aPI$PInINP<- (GN5aPI$ChIP_tss+0.1)/(GN5aPI$ChIP_gb+0.2)
+
+GN5aPI$PIwINP<- (GN5aPI$IP_inp+0.1)/(GN5aPI$GB_inp+0.2)
+GN5aPI2<- subset(GN5aPI,IP_inp>0)
+CHECK3<-  subset(GN5aPI2,SYMBOL=="DLL4" | SYMBOL=="NRARP"| SYMBOL=="JUNB")
+#summary(GN5aPI)
+NAME_SE2<- c("Sample","SYMBOL","PInINP" ,"IP_inp")
+NAME_SE3<- c("SYMBOL","IP_inp")
+
+ GN5aPI2<- subset(GN5aPI,IP_inp>0,select=NAME_SE2)
+#GN5aPI2$SY_SA<- paste(GN5aPI2$Sample,GN5aPI2$SYMBOL,sep="_")
+```
+
+
+```{r}
+downcol="lightblue"
+SAMPLE<- data.frame(c("CTR","CTR","CTR","siR20","siR20","siR20"))
+DE_LIST3<- list()
+ for(A in 1:length(mat_m22$Sample)){
+ MO<- mat_m22[A,1]
+ print(MO)
+    GN5aPI2MO<- subset(GN5aPI,Sample==MO ,select=NAME_SE2)
+#    GN5aPI2MO2<- subset(GN5aPI,Sample==MO &IP_inp>0,select=NAME_SE3)
+
+DE_LIST3[[A]]<-   aggregate(PInINP ~ SYMBOL, data = GN5aPI2MO, FUN = mean)
+#mat_3<- merge(GN5aPI2MOmean,GN5aPI2MO2,by="SYMBOL")
+#DE_LIST3[[A]] <-mat_3[!duplicated(GN5aPI[,c("SYMBOL","PInINP")]),]
+
+DE_LIST3[[A]]$CLU<- as.character(paste("PInINP",MO,sep="_"))
+DE_LIST3[[A]]$Sample<- as.character(SAMPLE[A,1])
+
+}
+GN5aPImean<- do.call(rbind, DE_LIST3)
+head(GN5aPImean)
+#GN5aPImean$SY_SA<- paste(GN5aPImean$Sample,GN5aPImean$SYMBOL,sep="_")
+
+MAT_AA2<- spread(GN5aPImean[,1:3],CLU, PInINP,fill = 0)
+head(MAT_AA2)
+MAT_AA2$sumPI<- rowSums(MAT_AA2[,2:ncol(MAT_AA2)])
+FIL<- data.matrix(summary(MAT_AA2$sumPI))
+FIL2<-as.numeric(round(FIL[2,1],digits = 2))
+FIL3<-as.numeric(round(FIL[3,1],digits = 2))
+   CHECK3<-  subset(MAT_AA2,SYMBOL=="DLL4" | SYMBOL=="NRARP"| SYMBOL=="JUNB")
+MAT_AA2$PI_Ctr_mean<- rowMeans(MAT_AA2[,2:4])
+MAT_AA2$PI_ERG_mean<- rowMeans(MAT_AA2[,5:7])
+MAT_AA2$diffPI<- MAT_AA2$PI_ERG_mean-MAT_AA2$PI_Ctr_mean
+summary(MAT_AA2$diffPI)
+
+countdata_2 <- as.matrix(MAT_AA2[,2:7])
+hist(log10(countdata_2), breaks=100, main="", col=downcol,
+     xlab=expression(Log[10]~"average count"))
+
+
+```
+
+### extrac TSS-inp from merge
+
+```{r}
+WORK1 = "../01DATA/02Norma_countPI_fmerERG/01HUVEC_PLKO_Ctr_P2t_IP_ChiPtag_count_normalize.txt"
+
+ mat_c = read.delim(WORK1,header=T,sep="\t",dec=".")
+ WORK22 = "../01DATA/02Norma_countPI_fmerERG/02HUVEC_ERG_OE_P2t_IP_ChiPtag_count_normalize.txt"
+
+ mat_2 = read.delim(WORK22,header=T,sep="\t",dec=".")
+ 
+ mat_c$IP_inp<- mat_c$ChIP_tss-mat_c$Input_tss
+ summary(mat_c$IP_inp)
+mat_2$IP_inp<- mat_2$ChIP_tss-mat_2$Input_tss
+summary(mat_2$IP_inp)
+mat_c_2<- rbind(mat_c,mat_2)
+mat_v1mat_c_2<- subset(mat_c_2,IP_inp>0,select=c("gene_id","IP_inp"))
+summary(mat_v1mat_c_2$IP_inp)
+  FIL<- data.matrix(summary(mat_v1mat_c_2$IP_inp))
+FIL2<-as.numeric(round(FIL[2,1],digits = 2))
+FIL3<-as.numeric(round(FIL[3,1],digits = 2))
+FIL5<-as.numeric(round(FIL[5,1],digits = 2))
+
+FIL23<- ((FIL2+FIL3)/2)+0.02
+mat_v1mat_c_2Q3<- subset(mat_v1mat_c_2,IP_inp>FIL5,select=c("gene_id"))
+
+colnames(mat_v108)<- c("gene_id","SYMBOL")
+mat_v1mat_c_2Q3SY<- merge(mat_v108,mat_v1mat_c_2Q3,by="gene_id")
+mat_v1mat_c_2Q3SY <-mat_v1mat_c_2Q3SY[!duplicated(mat_v1mat_c_2Q3SY[,c("SYMBOL")]),]
+
+MAT_AA2_wQ3<- merge(mat_v1mat_c_2Q3SY,MAT_AA2,by="SYMBOL")
+NAME_SE1<- c("SYMBOL",colnames(MAT_AA2[,2:5]))
+MAT_AA31<- subset(MAT_AA2,diffPI!=0 ,select=NAME_SE1)
+MAT_AA3<- subset(MAT_AA2_wQ3,diffPI!=0 ,select=NAME_SE1)
+dim(MAT_AA31)
+dim(MAT_AA3)
+countdata_2 <- as.matrix(MAT_AA3[,2:5])
+hist(countdata_2, breaks=100, main="", col=downcol,
+     xlab=expression(Log[10]~"average count"))+xlim(0,0.6)
+
+```
+
+
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=F}
+
+library(rstatix)
+library(ggpubr)
+mat_RPKM1_5_c <- gather(MAT_AA3, colnames(MAT_AA3[,2:5]), key="Sample",value= "log2fc")
+
+G2<- data.frame(str_split_fixed(mat_RPKM1_5_c$Sample,"_", 8))
+Sample2<- data.frame(paste(G2$X3,G2$X5,sep="_"))
+colnames(Sample2)<- "Sample2"
+mat_RPKM1_5_c1<- cbind(mat_RPKM1_5_c,Sample2)
+#colnames(mat_RPKM1_5_c1)[4]<- "Sample2"
+MA_SY<- plyr::count(mat_RPKM1_5_c1,c("SYMBOL"))
+resdk4m3_diff<- list()
+for(i in 1: length(MA_SY$SYMBOL)) {
+print(MA_SY[i,1])
+TEST1<- subset(mat_RPKM1_5_c1,SYMBOL==MA_SY[i,1])
+print(MA_SY[i,1])
+MO<- MA_SY[i,1]
+resdk4m3_diff[[MO]] <-TEST1 %>%group_by(SYMBOL) %>%t_test(log2fc ~ Sample2) %>%
+  adjust_pvalue(method = "fdr") %>%  add_significance("p.adj")
+
+}
+
+GN5<- do.call(rbind, resdk4m3_diff)
+head(GN5)
+MAT_AA3$PI_Ctr_mean<- rowMeans(MAT_AA3[,2:3])
+MAT_AA3$PI_ERG_mean<- rowMeans(MAT_AA3[,4:5])
+MAT_AA3$PI<- (MAT_AA3$PI_ERG_mean+0.1)/(MAT_AA3$PI_Ctr_mean+0.2)
+MAT_AA3$log2FCPI_ERG_v_Ctr<- log2(MAT_AA3$PI)
+GN5_2<- subset(GN5,select=c("SYMBOL","p" ,"p.adj"))
+GN5_2$test<- "t_unpair_test"
+
+MAT_AA4<- merge(MAT_AA3,GN5_2,by="SYMBOL")
+
+write.xlsx(MAT_AA4,file=paste(PTHA,"00", PROJECT, "_mean0_10TSS.xlsx",sep=""),overwrite = T)
+LOGD=0
+LOGUP=0
+PVALUE=0.05
+resdk4m3_down <- subset(MAT_AA4, p < PVALUE & log2FCPI_ERG_v_Ctr <LOGD)
+DWn<-  length(unique(resdk4m3_down$SYMBOL))
+
+##UP log2FC >= 1.5
+resdk4m3_up <- subset(MAT_AA4, p < PVALUE & log2FCPI_ERG_v_Ctr > LOGUP)
+UPn<- length(unique(resdk4m3_up$SYMBOL))
+```
+
+
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=T}
+
+library(ggVennDiagram)
+#> Warning: package 'ggVennDiagram' was built under R version 4.2.3
+
+```
+
+### load Rnf20 in ESC from BGI_Dob06
+### load PAUSING 
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=T}
+
+LOGD=-0.5
+LOGU=0.5
+PVALUE=0.25
+NAME_D<- paste("bD02P005","_l2_" ,LOGD,sep="")
+NAME_U<- paste("aU01P005","_l2_" ,LOGU,sep="")
+MAT_AA4$log2PI<- MAT_AA4$log2FCPI_ERG_v_Ctr
+
+FIL_ME<- data.matrix(summary(MAT_AA4$log2PI))
+FIL_ME2<-as.numeric(round(FIL_ME[2,1],digits = 2))
+FIL_ME5<-as.numeric(round(FIL_ME[5,1],digits = 2))
+FIL_ME4<-as.numeric(round(FIL_ME[4,1],digits = 2))
+   CHECK3<-  subset(MAT_AA4,SYMBOL=="DLL4" | SYMBOL=="NRARP"| SYMBOL=="JUNB")
+
+ELONGerg <-subset(MAT_AA4, p.adj < PVALUE & log2FCPI_ERG_v_Ctr <LOGD)
+PAUSerg <-subset(MAT_AA4,  p.adj < PVALUE &log2FCPI_ERG_v_Ctr > LOGUP)
+ELONGerg$GROUP<- "aLOSS"
+PAUSerg$GROUP<- "bGAIN"
+df2Rnf40_erg <-rbind(ELONGerg,PAUSerg)
+
+#df2Rnf40_diff_RNA_u$GROUP<- "01HIG"
+RNF20 = "../../03Fig3_P2t_RNF20/03OUTPUT/02Pauising_Pval_VENN_RNF20/0002Pauising_Pval_VENN_RNF20_mean0_10TSS.xlsx"
+cat("Current file name is:",RNF20,"\n")
+RNF20_PAU =read_excel(RNF20)
+
+ELONG <-subset(RNF20_PAU, p.adj < PVALUE & log2FCPI_R20_v_Ctr <LOGD)
+PAUS <-subset(RNF20_PAU,  p.adj < PVALUE &log2FCPI_R20_v_Ctr > LOGUP)
+ELONG$GROUP<- "aLOSS"
+PAUS$GROUP<- "bGAIN"
+df2Rnf20 <-rbind(ELONG,PAUS)
+
+```
+
+
+##### load ERG
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=T}
+
+library("readxl")
+TSS1=-1000
+TSS2=1000
+dBGI06_2 = "../../03Fig3_P2t_RNF20/01DATA/03Published_CHIP_seq/01ERG_GSE124893_vs_INP_MACS2_f001_EX150_annot"
+cat("Current file name is:",dBGI06_2,"\n")
+mat_dBGI06_2b =read.delim(dBGI06_2,header=T,check.names=FALSE, stringsAsFactors=FALSE)
+
+mat_dBGI06_2b$SYMBOL<- mat_dBGI06_2b$`Gene Name`
+mat_dBGI06_2b$GROUP<- "ERG_PEAKS"
+
+mat_dBGI06_2b$disTSS<- mat_dBGI06_2b$`Distance to TSS`
+
+mat_dBGI06_2b_1<- subset(mat_dBGI06_2b,disTSS>=TSS1 & disTSS<=TSS2,select=c("SYMBOL","GROUP"))
+mat_dBGI06_2b_1u <-mat_dBGI06_2b_1[!duplicated(mat_dBGI06_2b_1[,c("SYMBOL","GROUP")]),]
+#df2Rnf40_diff_RNA$GROUP<- df2Rnf40_diff_RNA$DIFF
+
+
+## PAUSING
+
+
+```
+
+## EST1 PEAKS
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=T}
+
+library("readxl")
+EST1_2 = "../../03Fig3_P2t_RNF20/01DATA/03Published_CHIP_seq/02EST1_12h_GSE93030_v_INP_MACS2_f001_EX150_vs_bl_annot"
+cat("Current file name is:",EST1_2,"\n")
+mat_EST1_2b =read.delim(EST1_2,header=T,check.names=FALSE, stringsAsFactors=FALSE)
+mat_EST1_2b$SYMBOL<- mat_EST1_2b$`Gene Name`
+mat_EST1_2b$GROUP<- "EST1_PEAKS_12h"
+mat_EST1_2b$disTSS<- mat_EST1_2b$`Distance to TSS`
+summary(mat_EST1_2b$disTSS)
+mat_EST1_2b_1<- subset(mat_EST1_2b,disTSS>=TSS1 & disTSS<=TSS2,select=c("SYMBOL","GROUP"))
+mat_EST1_2b_1 <-mat_EST1_2b_1[!duplicated(mat_EST1_2b_1[,c("SYMBOL","GROUP")]),]
+
+
+
+
+## Pausing 
+
+MAT_A<- rbind(mat_dBGI06_2b_1u,mat_dBGI06_2b_1,mat_EST1_2b_1)
+MAT_Au <-MAT_A[!duplicated(MAT_A[,c("SYMBOL","GROUP")]),]
+
+#MA99_3<- spread(MAT_Au[1:10,],GROUP,SYMBOL,fill=0)
+
+```
+
+
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=T}
+
+CP1vsRnf40 <- list(mat_dBGI06_2b_1,mat_EST1_2b_1,df2Rnf40_erg) %>%
+  Reduce(function(dtf1,dtf2) inner_join(dtf1,dtf2,by="SYMBOL"), .)
+
+write.xlsx(CP1vsRnf40,file=paste(PTHA,"010_",PROJECT, "_PAU_and_ERG_PEAKS.xlsx",sep=""))
+
+```
+
+
+
+## VEN Diagram
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=T}
+
+##CP1vs_E9_5n   
+upcol<- "#d5648b" # magenta from PiyG
+nc<- "#000000" # black
+#downcol<- "#7fbc41" # green from PiyG
+downcol<-"lightblue" # green from PiyG
+D0=paste(PTHA,PROJECT,"_PAU_LOSS.tiff",sep="")
+LL=0.03
+TT=0.7
+PP=c(0.5, 0.80)
+PP2=c(0.5, 0.90)
+MM=0.35
+set.seed(1)
+COL11<- rep("black",15)
+#df2_sor_CP1_diff_RNA_u$SY
+require(VennDiagram)
+venn.plot <- venn.diagram(
+  list(R20Pau_LOSS= ELONG$SYMBOL,ERGPau_LOSS= ELONGerg$SYMBOL, ERG_PE = mat_dBGI06_2b_1$SYMBOL, EST1_PE = mat_EST1_2b_1$SYMBOL), 
+  D0,
+  col = "transparent",
+  fill = c( "#f4cae4","#C8E4EB","#ef8a62","darkgrey"),
+  alpha = TT,
+  label.col = COL11,
+  cex = 1,
+  fontfamily = "serif",
+  fontface = "bold",
+  cat.col = c("black", "black", "black","black"),
+  cat.cex = 0.75,
+  cat.pos = 0,
+  cat.dist = LL,
+  cat.fontfamily = "serif",
+  rotation.degree = 180,
+  margin = MM,
+  print.mode="raw",
+  hyper.test = T,
+    resolution =600,
+  main=D0,
+    main.cex=1,  main.pos =PP
+  
+);
+
+D2=paste(PTHA,PROJECT,"_PAU_GAIN.tiff")
+set.seed(1)
+require(VennDiagram)
+venn.plot <- venn.diagram(
+  list(R20Pau_GAIN = PAUS$SYMBOL,ERGPau_GAIN = PAUSerg$SYMBOL, ERG_PE = mat_dBGI06_2b_1$SYMBOL, EST1_PE = mat_EST1_2b_1$SYMBOL), 
+  D2,
+  col = "transparent",
+  fill = c(upcol,"#332288", "#ef8a62","darkgrey"),
+  alpha = TT,
+  label.col = COL11,
+  cex = 1.5,
+  fontfamily = "serif",
+  fontface = "bold",
+  cat.col = c("#ef8a62", "#ef8a62", "black", "black"),
+  cat.cex = 0.75,
+  cat.pos = 0,
+  cat.dist = LL,
+  cat.fontfamily = "serif",
+  rotation.degree = 180,
+  margin = MM,
+  print.mode="raw",
+  hyper.test = T,
+    resolution =600,
+  main=D0,
+    main.cex=1,  main.pos =PP
+  
+);
+
+```
+
+############## PErcentage
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=T}
+
+MA1<- subset(df2Rnf20,select=c("SYMBOL","GROUP"))
+MA1erg<- subset(df2Rnf40_erg,select=c("SYMBOL","GROUP"))
+
+MA2<- rbind(MA1,MA1erg,mat_dBGI06_2b_1,mat_EST1_2b_1)
+MA2$freq=1
+MA2_u<- MA2[!duplicated(MA2[,c("SYMBOL","GROUP")]),]
+
+GN6<- spread(MA2_u,GROUP,freq,fill=0)
+colnames(GN6)<- c("SYMBOL","aL_Rnf20","cL_ERG","dG_ERG","ERG_PEAKS","EST1_PEAKS_12h")
+length(GN6$SYMBOL)
+#GN6$DIFF[GN6$aLOSS==1 & GN6$ERG_PEAKS==1 & GN6$EST1_PEAKS_12h==1] <- 1
+#GN6$DIFF[GN6$bGAIN ==1 & GN6$ERG_PEAKS==1 & GN6$EST1_PEAKS_12h==1] <- 1
+#table(GN6$DIFF)
+#GN6$DIFF[is.na(GN6$DIFF)] <- 0
+write.xlsx(GN6,file=paste(PTHA,"010_",PROJECT, "_ALL2.xlsx",sep=""))
+
+```
+
+
+
