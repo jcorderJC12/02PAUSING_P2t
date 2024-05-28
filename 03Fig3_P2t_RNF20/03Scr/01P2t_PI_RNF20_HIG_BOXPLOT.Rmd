@@ -1,0 +1,270 @@
+---
+title: "01P2t_PI_RNF20_HIG_BOXPLOT"
+author:
+- name:  Dr. Julio Domingo Cordero Henriquez
+  affiliation: 
+  - Department of Cardiovascular Genomics and Epigenomics, European Center for Angioscience (ECAS), Medical Faculty Mannheim, Heidelberg University, Mannheim, Germany
+output:
+  BiocStyle::html_document:
+    toc: true
+vignette: >
+  % \VignetteIndexEntry{01Script: }
+  % \VignetteEngine{knitr::rmarkdown}
+---
+```{r style, echo = FALSE, results = 'asis'}
+BiocStyle::markdown()
+```
+
+
+Mailto: julio.cordero@medma.uni-heidelberg.de<br />
+
+# **Objective**
+-To generate a Boxplots from Pause Index of output files from GitHub repository code **(https://github.com/MiMiroot/PIC)**.<br /><br />
+
+
+
+# Summary of figures produced by this script.
+```{r,fig.dim = c(13, 8), results="asis", align='center',out.width="150%", echo=F}
+library(knitr)
+#knitr::include_graphics("./BROAD_SUMMA_H3K4me3.png")
+```   
+
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=F}
+library(future)
+plan("sequential", workers = 16)
+```
+
+```{r,message=FALSE,echo=FALSE,warning=FALSE}
+library(openxlsx)
+library(data.table)
+library(edgeR)
+library(dplyr)
+library(doParallel)
+library(BiocParallel)
+library(gam)
+library(foreach)
+library(ggplot2)
+library("RcppArmadillo")
+library(DESeq2)
+library(RColorBrewer)
+library(Rcpp)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(plyr)
+library(gplots)
+library(EnrichedHeatmap)
+library(ComplexHeatmap)
+library(tidyr)
+library(circlize)
+library(stringr)
+library("purrr")
+library("dplyr")                                    # Load dplyr package
+library("plyr")                                     # Load plyr package
+library("readr")  
+library(edgeR)
+library(ggplot2)
+library(rstatix)
+library(ggpubr)
+```
+
+# Set the working environment and folder to output the results
+- ImPTHAant to keep the output files well organized follwoing the FAIR principles
+- Findable, Accessible, Interoperable, and Reusable **(FAIR)**
+
+```{r,class.source="bg-info",echo=F,warning=FALSE}
+workdir = "./"
+setwd(workdir)
+
+PTHA11="../03OUTPUT/"
+dir.create(PTHA11)
+PROJECT="01P2t_PI_RNF20_HIG_BOXPLOT"
+
+PTHA=paste(PTHA11,PROJECT,"/",sep="")
+PTHA2=paste(PTHA11,PROJECT,"/",sep="")
+dir.create(PTHA)
+dir.create(PTHA2)
+
+PEAK1="aCtr"
+PEAK2="bR20"
+c1 = "../01DATA/siCtrl_tag_countall_gene_PI.txt"
+ 
+mat_CTR = read.table(c1,header=T,sep="\t",dec=".")
+#
+#summary(mat_CTR)
+mat_CTR$TSSIP_in<-mat_CTR$ChIPTSScount-mat_CTR$InputTSScount 
+
+mat_CTR1<- subset(mat_CTR,chr!="chrM"&TSSIP_in>0)
+mat_CTR1$Clu=PEAK1
+
+c2 = "../01DATA/siRNF20_tag_countall_gene_PI.txt"
+cat("Current file name is:",c2,"\n")
+mat_c2 = read.delim(c2,header=T,sep="\t",dec=".")
+
+mat_c2$TSSIP_in<-mat_c2$ChIPTSScount-mat_c2$InputTSScount 
+
+mat_c3<- subset(mat_c2,chr!="chrM"&TSSIP_in>0 )
+
+#tail(mat_c3)
+mat_c3$Clu=PEAK2
+TRY=""
+```
+
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=F}
+mat_CTR2<- subset(mat_CTR1,Clu==PEAK1, select=c("gene_symbol","PI","Clu"))
+mat_R20<- subset(mat_c3,Clu==PEAK2,select=c("gene_symbol","PI","Clu"))
+#
+mat_CTR22<-   aggregate(PI ~ gene_symbol, data = mat_CTR2, FUN = mean)
+mat_R202<-   aggregate(PI ~ gene_symbol, data = mat_R20, FUN = mean)
+
+NAME_SAMPLE<- c("actr","aR20")
+colnames(mat_CTR22)<- c("SYMBOL","actr")
+colnames(mat_R202)<- c("SYMBOL","aR20")
+mat_CTR22$GROUP<- "actr"
+mat_R202$GROUP<- "aR20"
+#
+mat_CTR_20<- merge(mat_CTR22,mat_R202,by="SYMBOL")
+
+mat_CTR_20$zctr = as.numeric(scale(mat_CTR_20$actr,center = F))
+mat_CTR_20$zR20 = as.numeric(scale(mat_CTR_20$aR20,center = F))
+
+mat_CTR_20$PI_R20_v_ctr<- mat_CTR_20$aR20/mat_CTR_20$actr
+mat_CTR_20$log2PI_R20_v_ctr<- log2(mat_CTR_20$PI_R20_v_ctr)
+
+mat_CTR_20$zlog2PI<-log2(mat_CTR_20$zR20/mat_CTR_20$zctr)
+
+V45_se = read.delim("../01DATA/gencode.v45.basic_more1kb.txt",header=T,sep="\t",dec=".")
+
+mat_CTR_20_m122<- merge(mat_CTR_20,V45_se,by="SYMBOL")
+
+mat_CTR_20_m1u <- mat_CTR_20_m122[!duplicated(mat_CTR_20_m122[,"SYMBOL"]),]
+
+```
+
+
+### Separate HIhigly moderate and non-paused
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=T}
+GN5e2<- subset(mat_CTR_20_m1u,select=c("SYMBOL","actr","aR20","zctr","zR20","PI_R20_v_ctr","log2PI_R20_v_ctr","zlog2PI"))
+############ select the peak Wide from each data 
+FIL<- data.matrix(summary(GN5e2$actr))
+FIL5<-as.numeric(round(FIL[5,1],digits = 2))
+FIL3<-as.numeric(round(FIL[3,1],digits = 2))
+FIL2<-as.numeric(round(FIL[2,1],digits = 2))
+
+FIL5b<-as.numeric(round(FIL5,digits = 2))
+FIL3b<-as.numeric(round(FIL3,digits = 2))
+
+GN5e2$CLU[GN5e2$actr >=FIL5] <- paste("01HIG",">",FIL5b,sep=" ")
+GN5e2$CLU[GN5e2$actr <FIL5 & GN5e2$actr>= FIL3 ] <- paste("02ME_","<",FIL5b,">",FIL3b,sep="")
+GN5e2$CLU[GN5e2$actr < FIL2] <- paste("03LOW_<",FIL2,sep="")
+
+GN5e2$CLU2[GN5e2$actr >=FIL5] <- "01HIG"
+GN5e2$CLU2[GN5e2$actr <FIL5 & GN5e2$actr>= FIL3 ] <- "02ME"
+GN5e2$CLU2[GN5e2$actr < FIL2] <- "03LOW"
+
+GN5e3A<- subset(GN5e2,select=c("SYMBOL",NAME_SAMPLE,"CLU2"))
+
+GN5e3<- subset(GN5e2,CLU2=="01HIG" | CLU2=="02ME" | CLU2=="03LOW",select=c("SYMBOL",NAME_SAMPLE,"CLU2"))
+GN5e3b<- subset(GN5e2,CLU2=="01HIG" | CLU2=="02ME" | CLU2=="03LOW",select=c("SYMBOL",NAME_SAMPLE,"log2PI_R20_v_ctr", "CLU","CLU2"))
+
+mat_RPKM1_5_c <- gather(GN5e3, NAME_SAMPLE, key="Sample",value= "log2fc")
+mat_RPKM1_5_c11 <- gather(GN5e3A, NAME_SAMPLE, key="Sample",value= "log2fc")
+
+mat_RPKM1_5_c1<- subset(mat_RPKM1_5_c,CLU2=="01HIG" | CLU2=="02ME" | CLU2=="03LOW")
+mat_RPKM1_5_c1$log2fc2<- log2(mat_RPKM1_5_c1$log2fc+1)
+
+mat_RPKM1_5_c11$log2fc2<- log2(mat_RPKM1_5_c11$log2fc+1)
+
+mat_RPKM1_5_c11$CLU2<- "04ALL"
+mat_RPKM1_5_c<- rbind(mat_RPKM1_5_c1,mat_RPKM1_5_c11)
+write.xlsx(GN5e3b,file=paste(PTHA,PROJECT,'_MATRIX_PAUSE.xlsx',sep=""),overwrite = T)
+```
+
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=T}
+CO_ALU=c("black","#d7191c", "#542788","#d8b365","#abd9e9", "#2c7bb6", "#4d4d4d","#5ab4ac","grey","#de77ae")
+
+MA=0.5
+MAX=4
+BOR=0.3
+YL_EXP="log2(PI TSS/Genebody)"
+XL="Pause group"
+summary(mat_RPKM1_5_c)
+
+
+stat.test5 <- mat_RPKM1_5_c %>%
+  group_by(CLU2) %>%
+    wilcox_test(log2fc2 ~ Sample) %>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj")
+stat.test5
+stat.test5 <- stat.test5 %>%
+  add_xy_position(x = "Sample", dodge = 0.8)
+
+YPOS5<- as.numeric(rep(MAX-0.5,4))
+
+write.xlsx(stat.test5,file=paste(PTHA,PROJECT,"_fBoxpl_P.xlsx",sep=""))
+
+```
+
+
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=T}
+BASIC_COL="black"
+LE=10
+SI=10
+bxp <- ggboxplot( mat_RPKM1_5_c, x = "Sample", y = "log2fc2", fill = "Sample", palette =  (CO_ALU),outlier.shape =NA,legend = "right",color="grey", size=0.5)
+
+c11<- ggpar(bxp,ylim=c(0.5,MAX))+facet_grid(~CLU2, margins=TRUE,scales='fixed')+theme(plot.title = element_text(color=BASIC_COL, size=14, face="bold.italic"), axis.text.y   = element_text(size=LE), axis.title.x = element_text(color=BASIC_COL, size=14, face="bold"),  panel.border = element_rect(colour = BASIC_COL, fill=NA, size=BOR))+ labs(title=paste(PROJECT,TRY, sep="_" ) , x="", y = YL_EXP)+ guides(fill = guide_legend(title = "Group"))+ scale_y_continuous(breaks=c(0,2,3))
+                      
+c1<- ggpar(bxp,ylim=c(0.5,MAX))+facet_grid(~CLU2, margins=F,scales='fixed') +theme(plot.title = element_text(color=BASIC_COL, size=14, face="bold.italic"), axis.text.y   = element_text(size=LE), axis.title.x = element_text(color=BASIC_COL, size=14, face="bold"),  panel.border = element_rect(colour = BASIC_COL, fill=NA, size=BOR))+ labs(title=paste(PROJECT,TRY,sep="_" ) , x=XL, y = YL_EXP)+ stat_pvalue_manual(stat.test5,  label = "{p.adj.signif}", tip.length = 0.01 , y.position =YPOS5)
+arrangeBAR1 <- ggarrange(c11, ncol = 1,nrow =1,common.legend = T, align = c("hv"),legend="none")
+arrangeBAR11 <- ggarrange(c1, ncol = 1,nrow =1,common.legend = T, align = c("hv"),legend="none")
+
+pdf(file=paste(PTHA,PROJECT,"_PI_Catego",".pdf",sep=""),width=8, height=2.5 )
+print(arrangeBAR11)
+print(arrangeBAR1)
+dev.off()
+
+
+```
+
+## Plot of only boxplot of all Paused genes in categories
+```{r,fig.dim = c(6, 4),class.source="bg-info"}
+print(arrangeBAR1)
+```
+## Only High and Low paused
+```{r,message=FALSE,class.source="bg-info",warning=FALSE,echo=T}
+BASIC_COL="black"
+LE=10
+SI=10
+stat.test5 <- stat.test5 %>%
+  add_xy_position(x = "Sample", dodge = 0.8)
+
+stat.test6<- subset(stat.test5,CLU2=="01HIG" | CLU2=="04ALL" )
+
+   
+YPOS6<- as.numeric(rep(MAX-0.5,2))
+MAT_HI_LO<- subset(mat_RPKM1_5_c,CLU2=="01HIG" | CLU2=="04ALL" )
+pdf(file=paste(PTHA,PROJECT,"_oHIG.pdf",sep=""),width=5, height=2.5 )
+
+
+bxp11 <- ggboxplot( MAT_HI_LO, x = "Sample", y = "log2fc2", fill = "Sample", palette =  (CO_ALU),outlier.shape =NA,legend = "right",color="grey", size=0.5)
+
+c22<- ggpar(bxp11,ylim=c(0.5,MAX))+facet_grid(~CLU2, margins=F,scales='fixed') +theme(plot.title = element_text(color=BASIC_COL, size=14, face="bold.italic"), axis.text.y   = element_text(size=LE), axis.title.x = element_text(color=BASIC_COL, size=14, face="bold"),  panel.border = element_rect(colour = BASIC_COL, fill=NA, size=BOR))+ labs(title=paste(PROJECT,TRY,sep="_" ) , x=XL, y = YL_EXP)
+
+
+               
+c2<- ggpar(bxp11,ylim=c(0.5,MAX))+facet_grid(~CLU2, margins=F,scales='fixed') +theme(plot.title = element_text(color=BASIC_COL, size=14, face="bold.italic"), axis.text.y   = element_text(size=LE), axis.title.x = element_text(color=BASIC_COL, size=14, face="bold"),  panel.border = element_rect(colour = BASIC_COL, fill=NA, size=BOR))+ labs(title=paste(PROJECT,TRY,sep="_" ) , x=XL, y = YL_EXP)+ stat_pvalue_manual(stat.test6,  label = "{p.adj.signif}", tip.length = 0.01 , y.position =YPOS6)
+
+arrangec22 <- ggarrange(c22, ncol = 1,nrow =1,common.legend = T, align = c("hv"),legend="none")
+arrangec2 <- ggarrange(c2, ncol = 1,nrow =1,common.legend = T, align = c("hv"),legend="none")
+
+pdf(file=paste(PTHA,PROJECT,"_oHIG_ALL.pdf",sep=""),width=3, height=2.5 )
+
+print(arrangec22)
+print(arrangec2)
+dev.off()
+```
+
+## Plot of only boxplot of high and all Paused genes in categories
+```{r,fig.dim = c(6, 4),class.source="bg-info"}
+print(arrangec2)
+```
